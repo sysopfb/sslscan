@@ -41,11 +41,16 @@ def insert_cert(conn, ip, port, der, cert):
 	(md5,sha1,sha256) = hashdata(der)
 	print(sha1)
 	c = conn.cursor()
-	c.execute('select * from certs where sha256=? and ip=?',(sha256,ip,))
+	c.execute('select * from certs where sha256=? and recdate=? and ip=?',(sha256,date,ip,))
 	certrec = c.fetchone()
 	if certrec == None:
 		x509obj = x509.load_pem_x509_certificate(cert, default_backend())
-		cert_str = str(x509obj.subject)
+		try:
+			cert_str = str(x509obj.subject)
+			print('IP: ' + ip + ' - ' + cert_str)
+		except:
+			cert_str = ("Empty")
+			print('IP: ' + ip + ' - ' + cert_str)
 		substrate = pem.readPemFromFile(io.BytesIO(cert))
 		certobj = decoder.decode(substrate, asn1Spec=rfc2459.Certificate())[0]
 		cert_str += certobj.prettyPrint()
@@ -58,19 +63,13 @@ def insert_cert(conn, ip, port, der, cert):
 		certid = certrec[0]
 	return certid
 
-def search_cert(conn, search_s, all_flag):
+def search_cert(conn, search_s):
 	c = conn.cursor()
-	if not all_flag:
-		c.execute("select ip,port,certpp,recdate from certs where certpp like ? and recdate=?",(search_s, date))
-	else:
-		c.execute("select ip,port,certpp,recdate from certs where certpp like ?",(search_s,))
+	c.execute("select ip,port,certpp,recdate from certs where certpp like ? and recdate=?",(search_s, date))
 	out = c.fetchall()
 	if out == []:
 		#Need to write a better x509 asn1 parser...
-		if not all_flag:
-			c.execute("select ip,port,certpp,recdate from certs where certpp like ? and recdate=?",(binascii.hexlify(search_s), date))
-		else:
-			c.execute("select ip,port,certpp,recdate from certs where certpp like ?",(binascii.hexlify(search_s), ))
+		c.execute("select ip,port,certpp,recdate from certs where certpp like ? and recdate=?",(binascii.hexlify(search_s), date))
 		out = c.fetchall()
 	return out
 
@@ -102,20 +101,15 @@ def main():
 		for ip in ips:
 			temp += ip+':'+port+'\n'
 		out = sock_scanner.scan_ips(temp)
-		for line in out.split('\n'):
-			(host,port) = line.split(':')
+		if out != '':
+			for line in out.split('\n'):
+				(host,port) = line.split(':')
 
-			(der,pem) = get_cert_pem(host,int(port))
-			if pem != 0:
-				print("host")
-				insert_cert(conn, host, port, der,pem)
+				(der,pem) = get_cert_pem(host,int(port))
+				if pem != 0:
+					insert_cert(conn, host, port, der,pem)
 	elif sys.argv[1] == 'search':
-		if sys.argv[2] == 'all':
-			all_flag = True
-			print(search_cert(conn, sys.argv[3],all_flag))
-		else:
-			all_flag = False
-			print(search_cert(conn, sys.argv[2],all_flag))
+		print(search_cert(conn, sys.argv[2]))
 		
 	conn.close()
 
